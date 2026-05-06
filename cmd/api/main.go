@@ -9,7 +9,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/scythe504/webtorrent/internal/server"
+	"github.com/scythe504/fluxstream/internal/server"
 )
 
 func gracefulShutdown(apiServer *http.Server, done chan bool) {

@@ -1,4 +1,4 @@
-module github.com/scythe504/webtorrent
+module github.com/scythe504/fluxstream
 
 go 1.25.2
 

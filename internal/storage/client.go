@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/scythe504/webtorrent/internal/tor"
+	"github.com/scythe504/fluxstream/internal/tor"
 )
 
 type Service interface {

@@ -10,7 +10,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/scythe504/webtorrent/internal"
+	"github.com/scythe504/fluxstream/internal"
 )
 
 // Start runs docker-compose up and displays URLs once ready

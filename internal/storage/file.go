@@ -2,7 +2,7 @@ package storage
 
 import (
 	"fmt"
-	"github.com/scythe504/webtorrent/internal/tor"
+	"github.com/scythe504/fluxstream/internal/tor"
 	"io"
 	"os"
 	"path/filepath"

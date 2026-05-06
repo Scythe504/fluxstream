@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/scythe504/webtorrent/internal/worker"
+	"github.com/scythe504/fluxstream/internal/worker"
 )
 
 const (

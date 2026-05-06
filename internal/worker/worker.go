@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"log"
 
-	postgresdb "github.com/scythe504/webtorrent/internal/postgres-db"
-	redisdb "github.com/scythe504/webtorrent/internal/redis-db"
-	"github.com/scythe504/webtorrent/internal/storage"
-	"github.com/scythe504/webtorrent/internal/tor"
+	postgresdb "github.com/scythe504/fluxstream/internal/postgres-db"
+	redisdb "github.com/scythe504/fluxstream/internal/redis-db"
+	"github.com/scythe504/fluxstream/internal/storage"
+	"github.com/scythe504/fluxstream/internal/tor"
 )
 
 type TorrentWorker struct {

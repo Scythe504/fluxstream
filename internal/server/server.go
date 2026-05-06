@@ -10,9 +10,9 @@ import (
 	"time"
 
 	_ "github.com/joho/godotenv/autoload"
-	postgresdb "github.com/scythe504/webtorrent/internal/postgres-db"
-	redisdb "github.com/scythe504/webtorrent/internal/redis-db"
-	"github.com/scythe504/webtorrent/internal/tor"
+	postgresdb "github.com/scythe504/fluxstream/internal/postgres-db"
+	redisdb "github.com/scythe504/fluxstream/internal/redis-db"
+	"github.com/scythe504/fluxstream/internal/tor"
 )
 
 type StreamResolver struct {

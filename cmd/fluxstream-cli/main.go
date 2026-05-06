@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"github.com/scythe504/webtorrent/internal/commands"
+	"github.com/scythe504/fluxstream/internal/commands"
 	"github.com/spf13/cobra"
 )
 

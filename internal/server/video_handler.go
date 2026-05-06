@@ -12,10 +12,10 @@ import (
 	"github.com/anacrolix/torrent"
 	"github.com/gorilla/mux"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/scythe504/webtorrent/internal"
-	postgresdb "github.com/scythe504/webtorrent/internal/postgres-db"
-	redisdb "github.com/scythe504/webtorrent/internal/redis-db"
-	"github.com/scythe504/webtorrent/internal/tor"
+	"github.com/scythe504/fluxstream/internal"
+	postgresdb "github.com/scythe504/fluxstream/internal/postgres-db"
+	redisdb "github.com/scythe504/fluxstream/internal/redis-db"
+	"github.com/scythe504/fluxstream/internal/tor"
 )
 
 func (s *Server) saveVideo(w http.ResponseWriter, r *http.Request) {

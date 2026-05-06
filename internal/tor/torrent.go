@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/anacrolix/torrent"
-	"github.com/scythe504/webtorrent/internal"
+	"github.com/scythe504/fluxstream/internal"
 )
 
 type Torrent struct {
