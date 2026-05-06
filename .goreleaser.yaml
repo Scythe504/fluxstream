@@ -6,7 +6,7 @@ before:
 
 builds:
   - id: fluxstream
-    main: ./cmd/fluxstream-cli/main.go
+    main: ./cmd/cli/main.go
     binary: fluxstream
     env:
       - CGO_ENABLED=0
