@@ -7,6 +7,7 @@ import (
 
 	"github.com/gorilla/mux"
 )
+
 func (s *Server) RegisterRoutes() http.Handler {
 	r := mux.NewRouter()
 
@@ -15,14 +16,17 @@ func (s *Server) RegisterRoutes() http.Handler {
 	r.HandleFunc("/", s.HelloWorldHandler).Methods("GET", "OPTIONS")
 
 	video := r.PathPrefix("/videos").Subrouter()
+	torrent := r.PathPrefix("/torrents").Subrouter()
 	video.HandleFunc("", s.createVideo).Methods("POST", "OPTIONS")
 	video.HandleFunc("", s.listVideos).Methods("GET", "OPTIONS")
 	video.HandleFunc("/{videoId}/metadata", s.getVideoMetadata).Methods("GET", "OPTIONS")
 	video.HandleFunc("/{videoId}/stream", s.streamVideo).Methods("GET", "HEAD", "OPTIONS")
-	video.HandleFunc("/{videoId}/save", s.saveVideo).Methods("POST", "OPTIONS")
+	torrent.HandleFunc("/{videoId}/stats/stream", s.torrentStatsStream).Methods("GET")
+	torrent.HandleFunc("/{videoId}", s.deleteTorrent).Methods("DELETE")
 
 	return r
 }
+
 // CORS middleware
 func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

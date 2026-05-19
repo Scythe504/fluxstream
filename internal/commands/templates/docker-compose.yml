@@ -20,21 +20,13 @@ services:
       - PORT=8080
       - APP_ENV=local
       - PUBLIC_URL=http://localhost:8080
-      - REDIS_DB_ADDRESS=redis
-      - REDIS_DB_PORT=6379
-      - REDIS_DB_PASSWORD=
-      - REDIS_DB_DATABASE=0
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_DATABASE=fluxstream
-      - DB_USERNAME=fluxstream
-      - DB_PASSWORD=fluxstream
-      - DB_SCHEMA=public
+      - DB_URL=/app/fluxstream.db
       - FRONTEND_URL=http://localhost:3000
     ports:
       - "8080:8080"
     volumes:
       - "{{DOWNLOAD_PATH}}:/app/fluxstream/download"
+      - "./fluxstream.db:/app/fluxstream.db"
     networks:
       - fluxstream
     restart: unless-stopped

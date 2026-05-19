@@ -35,3 +35,6 @@ fluxstream
 .DS_Store
 # Added by goreleaser init:
 dist/
+fluxstream.db 
+fluxstream.db-shm 
+fluxstream.db-wal

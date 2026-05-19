@@ -6,15 +6,17 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/anacrolix/torrent"
 	"github.com/scythe504/fluxstream/internal"
 )
 
-type Torrent struct {
-	cl  *torrent.Client
-	tor map[string]*torrent.Torrent
+type TorrentManager struct {
+	cl       *torrent.Client
+	torrents map[string]*torrent.Torrent
+	mu       sync.RWMutex
 }
 
 type FileMetadata struct {
@@ -25,7 +27,7 @@ type FileMetadata struct {
 	IsVideo   bool   `json:"is_video"`  // Whether it's a recognized video format
 }
 
-func New(port int) Torrent {
+func New(port int) TorrentManager {
 	cfg := torrent.NewDefaultClientConfig()
 
 	// Networking
@@ -60,15 +62,18 @@ func New(port int) Torrent {
 		log.Fatal(err)
 	}
 
-	return Torrent{
-		cl:  client,
-		tor: make(map[string]*torrent.Torrent),
+	return TorrentManager{
+		cl:       client,
+		torrents: make(map[string]*torrent.Torrent),
+		mu:       sync.RWMutex{},
 	}
 }
 
-func (tr *Torrent) AddMagnet(id, magnetLink string) error {
+func (tr *TorrentManager) AddMagnet(id, magnetLink string) error {
+	tr.mu.Lock()
 	t, err := tr.cl.AddMagnet(magnetLink)
 	if err != nil {
+		tr.mu.Unlock()
 		return fmt.Errorf("failed to add magnet: %w", err)
 	}
 
@@ -77,12 +82,14 @@ func (tr *Torrent) AddMagnet(id, magnetLink string) error {
 	case <-t.GotInfo():
 	case <-time.After(10 * time.Second):
 		t.Drop()
+		tr.mu.Unlock()
 		return fmt.Errorf("timeout waiting for metadata for id: %s", id)
 	}
 
 	files := t.Files()
 	if len(files) == 0 {
 		t.Drop()
+		tr.mu.Unlock()
 		return fmt.Errorf("no files found in torrent for id: %s", id)
 	}
 
@@ -97,17 +104,21 @@ func (tr *Torrent) AddMagnet(id, magnetLink string) error {
 
 	if !hasVideo {
 		t.Drop() // prevent keeping useless torrents
+		tr.mu.Unlock()
 		return fmt.Errorf("no valid video files found for id: %s", id)
 	}
 
 	// Save torrent handle
-	tr.tor[id] = t
+	tr.torrents[id] = t
+	tr.mu.Unlock()
 	return nil
 }
-func (tr *Torrent) GetReader(id string) *torrent.Reader {
+func (tr *TorrentManager) GetReader(id string) *torrent.Reader {
 	// Ensure torrent exists
-	t, ok := tr.tor[id]
+	tr.mu.RLock()
+	t, ok := tr.torrents[id]
 	if !ok || t == nil {
+		tr.mu.RUnlock()
 		return nil
 	}
 
@@ -116,13 +127,15 @@ func (tr *Torrent) GetReader(id string) *torrent.Reader {
 	case <-t.GotInfo():
 	case <-time.After(15 * time.Second):
 		log.Printf("[GetReader] timeout waiting for metadata: %s", id)
+		tr.mu.RUnlock()
 		return nil
 	}
 
 	// Get the main video file
-	mainFile, err := tr.GetMainVideoFile(id)
+	mainFile, err := tr.getMainVideoFile(id)
 	if err != nil {
 		log.Printf("[GetReader] failed to get main video file: %v", err)
+		tr.mu.RUnlock()
 		return nil
 	}
 
@@ -130,14 +143,18 @@ func (tr *Torrent) GetReader(id string) *torrent.Reader {
 	reader := mainFile.NewReader()
 	if reader == nil {
 		log.Printf("[GetReader] failed to create reader for file: %s", mainFile.DisplayPath())
+		tr.mu.RUnlock()
 		return nil
 	}
+	tr.mu.RUnlock()
 	return &reader
 }
-func (tr *Torrent) GetMagnetLink(videoId string) *string {
-	t, ok := tr.tor[videoId]
+func (tr *TorrentManager) GetMagnetLink(videoId string) *string {
+	tr.mu.RLock()
+	t, ok := tr.torrents[videoId]
 	if !ok || t == nil {
 		log.Printf("[GetMagnetLink] torrent not found for id: %s", videoId)
+		tr.mu.RUnlock()
 		return nil
 	}
 
@@ -146,49 +163,34 @@ func (tr *Torrent) GetMagnetLink(videoId string) *string {
 	magnetV2, err := metainfo.MagnetV2()
 	if err != nil {
 		log.Printf("[GetMagnetLink] failed to get magnet V2: %v", err)
+		tr.mu.RUnlock()
 		return nil
 	}
 
 	magnetURI := magnetV2.String()
+	tr.mu.RUnlock()
 	return &magnetURI
 }
 
-// CleanupTorrent safely stops and removes a torrent from memory and disk cache.
-func (tr *Torrent) CleanupTorrent(videoId string) error {
-	// Ensure torrent exists
-	t, ok := tr.tor[videoId]
+func (tr *TorrentManager) CleanupTorrent(videoId string) error {
+	tr.mu.Lock()
+	t, ok := tr.torrents[videoId]
 	if !ok || t == nil {
 		log.Printf("[CleanupTorrent] no active torrent found for id: %s", videoId)
+		tr.mu.Unlock()
 		return nil
 	}
+	delete(tr.torrents, videoId)
+	tr.mu.Unlock()
 
-	// Stop all activity on the torrent
-	defer func() {
-		delete(tr.tor, videoId)
-		log.Printf("[CleanupTorrent] cleaned up torrent for id: %s", videoId)
-	}()
-
-	// Attempt to close all readers
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				log.Printf("[CleanupTorrent] recovered while closing readers for id %s: %v", videoId, r)
-			}
-		}()
-		for _, f := range t.Files() {
-			f.DisplayPath() // touch file to ensure safety
-		}
-	}()
-
-	// Stop the torrent download
 	t.Drop()
-
+	log.Printf("[CleanupTorrent] cleaned up torrent for id: %s", videoId)
 	return nil
 }
 
 // GetMainVideoFile returns the largest valid video file in the torrent.
-func (tr *Torrent) GetMainVideoFile(videoId string) (*torrent.File, error) {
-	t, ok := tr.tor[videoId]
+func (tr *TorrentManager) getMainVideoFile(videoId string) (*torrent.File, error) {
+	t, ok := tr.torrents[videoId]
 	if !ok {
 		return nil, fmt.Errorf("torrent not found for videoId: %s", videoId)
 	}
@@ -224,9 +226,11 @@ func (tr *Torrent) GetMainVideoFile(videoId string) (*torrent.File, error) {
 }
 
 // GetMetadata returns metadata for the main video file of the torrent.
-func (tr *Torrent) GetMetadata(videoId string) (*FileMetadata, error) {
-	mainFile, err := tr.GetMainVideoFile(videoId)
+func (tr *TorrentManager) GetMetadata(videoId string) (*FileMetadata, error) {
+	tr.mu.RLock()
+	mainFile, err := tr.getMainVideoFile(videoId)
 	if err != nil {
+		tr.mu.RUnlock()
 		return nil, err
 	}
 
@@ -241,5 +245,51 @@ func (tr *Torrent) GetMetadata(videoId string) (*FileMetadata, error) {
 		IsVideo:   internal.IsVideoFile(ext),
 	}
 
+	tr.mu.RUnlock()
 	return meta, nil
+}
+
+type TorrentStats struct {
+	BytesCompleted int64 `json:"bytes_completed"`
+	BytesMissing int64 `json:"bytes_missing"`
+	TotalBytes int64 `json:"total_bytes"`
+	Progress float64 `json:"progress"`
+	ActivePeers int `json:"active_peers"`
+	TotalPeers int `json:"total_peers"`
+	DownloadSpeed int64 `json:"download_speed"`
+	UploadSpeed int64 `json:"upload_speed"`
+}
+
+func (tr *TorrentManager) GetStats(videoId string, prevDown, prevUp int64) (*TorrentStats, int64, int64, error) {
+	tr.mu.RLock()
+	t, ok := tr.torrents[videoId]
+	tr.mu.RUnlock()
+	if !ok || t == nil {
+		return nil, 0, 0, fmt.Errorf("torrent not found: %s", videoId)
+	}
+
+	stats := t.Stats()
+
+	missing := t.BytesMissing()
+	completed := t.BytesCompleted()
+	total := completed + missing
+
+	currentDown := stats.BytesRead.Int64()
+	currentUp := stats.BytesWritten.Int64()
+
+	var progress float64 
+	if total > 0 {
+		progress = float64(completed) / float64(total)
+	}
+
+	return &TorrentStats{
+		BytesCompleted: completed,
+		BytesMissing: missing,
+		TotalBytes: total,
+		Progress: progress,
+		ActivePeers: stats.ActivePeers,
+		TotalPeers: stats.TotalPeers,
+		DownloadSpeed: currentDown - prevDown,
+		UploadSpeed: currentUp - prevUp,
+	}, currentDown, currentUp, nil
 }
