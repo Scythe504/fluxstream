@@ -4,8 +4,11 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"net/http/httputil"
+	"strings"
 
 	"github.com/gorilla/mux"
+	"github.com/scythe504/fluxstream/internal/provider"
 )
 
 func (s *Server) RegisterRoutes() http.Handler {
@@ -23,6 +26,8 @@ func (s *Server) RegisterRoutes() http.Handler {
 	video.HandleFunc("/{videoId}/stream", s.streamVideo).Methods("GET", "HEAD", "OPTIONS")
 	torrent.HandleFunc("/{videoId}/stats/stream", s.torrentStatsStream).Methods("GET")
 	torrent.HandleFunc("/{videoId}", s.deleteTorrent).Methods("DELETE")
+	providers := r.PathPrefix("/providers")
+	providers.PathPrefix("/{provider}/").HandlerFunc(s.reverseProxyProvider)
 
 	return r
 }
@@ -55,4 +60,37 @@ func (s *Server) HelloWorldHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_, _ = w.Write(jsonResp)
+}
+
+func (s *Server) reverseProxyProvider(w http.ResponseWriter, r *http.Request) {
+	providerName := mux.Vars(r)["provider"]
+	if providerName == "" {
+		http.Error(w, "provider missing", http.StatusBadRequest)
+		return
+	}
+
+	// strip /plugins/{provider} prefix to get the path to forward
+	providerPath := strings.TrimPrefix(r.URL.Path, "/providers/"+providerName)
+
+	log.Println("Path: ", providerPath)
+
+	p, ok := s.providers.Load(providerName)
+	if !ok {
+		pr := provider.InitProvider(providerName, "http://localhost:8081")
+		if pr == nil {
+			http.Error(w, "failed to init provider", http.StatusBadGateway)
+			return
+		}
+		s.providers.Store(providerName, pr)
+		p = pr
+	}
+
+	prov := p.(*provider.Provider)
+	prov.Proxy.Rewrite = func(req *httputil.ProxyRequest) {
+		req.SetURL(prov.BaseUrl)
+		req.Out.URL.Path = providerPath
+		req.Out.URL.RawQuery = req.In.URL.RawQuery
+	}
+
+	prov.Proxy.ServeHTTP(w, r)
 }

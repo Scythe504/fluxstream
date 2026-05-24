@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"sync"
 	"time"
 
 	_ "github.com/joho/godotenv/autoload"
@@ -17,6 +18,7 @@ type Server struct {
 	port int
 	db   database.Service
 	t    tor.TorrentManager
+	providers sync.Map
 }
 
 func NewServer() *http.Server {
@@ -26,6 +28,7 @@ func NewServer() *http.Server {
 		port: port,
 		db:   database.New(),
 		t:    tor.New(42069),
+		providers: sync.Map{},
 	}
 
 	// Declare Server config
