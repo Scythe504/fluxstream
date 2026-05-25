@@ -1,5 +1,7 @@
 package database
 
+import "database/sql"
+
 type Video struct {
 	Id         string `db:"id" json:"id"`
 	MagnetLink string `db:"magnet_link" json:"magnet_link"`
@@ -64,11 +66,14 @@ func (s *service) GetAllVideos() ([]Video, error) {
 
 	rows, err := s.db.Query(stmt)
 	if err != nil {
+		if err == sql.ErrNoRows {
+			return []Video{}, nil
+		}
 		return nil, err
 	}
 	defer rows.Close()
 
-	var videos []Video
+	videos := []Video{}
 
 	for rows.Next() {
 		var v Video

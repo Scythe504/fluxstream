@@ -25,7 +25,7 @@ func (s *Server) RegisterRoutes() http.Handler {
 	video.HandleFunc("/{videoId}/metadata", s.getVideoMetadata).Methods("GET", "OPTIONS")
 	video.HandleFunc("/{videoId}/stream", s.streamVideo).Methods("GET", "HEAD", "OPTIONS")
 	torrent.HandleFunc("/{videoId}/stats/stream", s.torrentStatsStream).Methods("GET")
-	torrent.HandleFunc("/{videoId}", s.deleteTorrent).Methods("DELETE")
+	torrent.HandleFunc("/{videoId}", s.deleteTorrent).Methods("DELETE", "OPTIONS")
 	providers := r.PathPrefix("/providers")
 	providers.PathPrefix("/{provider}/").HandlerFunc(s.reverseProxyProvider)
 

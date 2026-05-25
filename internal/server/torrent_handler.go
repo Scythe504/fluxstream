@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/scythe504/fluxstream/internal/utils"
 )
 
 func (s *Server) torrentStatsStream(w http.ResponseWriter, r *http.Request) {
@@ -63,24 +64,29 @@ func (s *Server) deleteTorrent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid json body", http.StatusBadRequest)
+		utils.WriteError(w, http.StatusBadRequest, "invalid json body")
 		return
 	}
 
 	if body.DeleteResource {
 		video, err := s.db.GetVideo(videoId)
 		if err != nil {
-			http.Error(w, "video not found", http.StatusNotFound)
+			utils.WriteError(w, http.StatusNotFound, "video not found")
 			return
 		}
 
-		if err := os.Remove(video.FilePath); err != nil && os.IsNotExist(err) {
-			log.Println("[DeleteTorrent] failed to remove file: %v", err)
+		if err := os.Remove(video.FilePath); err != nil && !os.IsNotExist(err) {
+			log.Printf("[DeleteTorrent] failed to remove file %s: %v\n", video.FilePath, err)
+		}
+
+		partPath := video.FilePath + ".part"
+		if err := os.Remove(partPath); err != nil && !os.IsNotExist(err) {
+			log.Printf("[DeleteTorrent] failed to remove part file %s: %v\n", partPath, err)
 		}
 	}
 
 	if err := s.t.CleanupTorrent(videoId); err != nil {
-		http.Error(w, "failed to cleanup torrent", http.StatusInternalServerError)
+		utils.WriteError(w, http.StatusInternalServerError, "failed to cleanup torrent")
 		return
 	}
 

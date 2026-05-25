@@ -13,25 +13,19 @@ import (
 
 	"github.com/anacrolix/torrent"
 	"github.com/gorilla/mux"
-	"github.com/scythe504/fluxstream/internal"
 	"github.com/scythe504/fluxstream/internal/database"
 	"github.com/scythe504/fluxstream/internal/tor"
+	"github.com/scythe504/fluxstream/internal/utils"
 )
 
 func (s *Server) listVideos(w http.ResponseWriter, r *http.Request) {
 	videos, err := s.db.GetAllVideos()
 	if err != nil {
-		http.Error(w, fmt.Sprintf("failed to fetch videos: %v", err), http.StatusInternalServerError)
+		utils.WriteError(w, http.StatusInternalServerError, fmt.Sprintf("failed to fetch videos: %v", err))
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-
-	if err := json.NewEncoder(w).Encode(videos); err != nil {
-		http.Error(w, fmt.Sprintf("failed to encode response: %v", err), http.StatusInternalServerError)
-		return
-	}
+	utils.WriteJSON(w, http.StatusOK, videos)
 }
 
 func (s *Server) createVideo(w http.ResponseWriter, r *http.Request) {
@@ -39,7 +33,7 @@ func (s *Server) createVideo(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		log.Println("[StartVideo] Invalid Request body", err)
-		http.Error(w, "Invalid json body", http.StatusBadRequest)
+		utils.WriteError(w, http.StatusBadRequest, "Invalid json body")
 		return
 	}
 	defer r.Body.Close()
@@ -49,15 +43,15 @@ func (s *Server) createVideo(w http.ResponseWriter, r *http.Request) {
 
 	if err = json.Unmarshal(body, &link); err != nil {
 		log.Println("[StartVideo] Invalid Json Body", err)
-		http.Error(w, "Failed to Parse JSON", http.StatusBadRequest)
+		utils.WriteError(w, http.StatusBadRequest, "Failed to Parse JSON")
 		return
 	}
 
-	videoId := internal.RandomId()
+	videoId := utils.RandomId()
 
 	if err = s.t.AddMagnet(videoId, link.MagnetLink); err != nil {
 		log.Println("[StartVideo] failed to get the magnet link")
-		http.Error(w, "failed to get video", http.StatusBadRequest)
+		utils.WriteError(w, http.StatusBadRequest, "failed to get video")
 		return
 	}
 
@@ -71,12 +65,11 @@ func (s *Server) createVideo(w http.ResponseWriter, r *http.Request) {
 	// Insert Video row into SQLite
 	if err = s.db.CreateVideo(video); err != nil {
 		log.Println("[StartVideo] failed to persist video", err)
-		http.Error(w, "failed to persist video", http.StatusInternalServerError)
+		utils.WriteError(w, http.StatusInternalServerError, "failed to persist video")
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(fmt.Sprintf("{ \"video_id\": \"%s\" }", videoId)))
+	utils.WriteJSON(w, http.StatusOK, map[string]string{"video_id": videoId})
 }
 
 // Resolve returns a video reader + metadata by checking torrent, cache, and disk.
@@ -137,27 +130,25 @@ func (s *Server) getVideoMetadata(w http.ResponseWriter, r *http.Request) {
 	// Try torrent first (if active)
 	meta, err := s.t.GetMetadata(videoId)
 	if err == nil && meta != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(meta)
+		utils.WriteJSON(w, http.StatusOK, meta)
 		return
 	}
 
 	// Fallback: get from DB and disk
 	video, err := s.db.GetVideo(videoId)
 	if err != nil {
-		http.Error(w, "video not found", http.StatusNotFound)
+		utils.WriteError(w, http.StatusNotFound, "video not found")
 		return
 	}
 
-	if video.FilePath == "" || !internal.FileExists(video.FilePath) {
-		http.Error(w, "metadata unavailable", http.StatusNotFound)
+	if video.FilePath == "" || !utils.FileExists(video.FilePath) {
+		utils.WriteError(w, http.StatusNotFound, "metadata unavailable")
 		return
 	}
 
 	info, err := os.Stat(video.FilePath)
 	if err != nil {
-		http.Error(w, "failed to read file metadata", http.StatusInternalServerError)
+		utils.WriteError(w, http.StatusInternalServerError, "failed to read file metadata")
 		return
 	}
 
@@ -166,11 +157,10 @@ func (s *Server) getVideoMetadata(w http.ResponseWriter, r *http.Request) {
 		Path:      video.FilePath,
 		Length:    info.Size(),
 		Extension: filepath.Ext(video.FilePath),
-		IsVideo:   internal.IsVideoFile(filepath.Ext(video.FilePath)),
+		IsVideo:   utils.IsVideoFile(filepath.Ext(video.FilePath)),
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(meta)
+	utils.WriteJSON(w, http.StatusOK, meta)
 }
 
 func (s *Server) streamVideo(w http.ResponseWriter, r *http.Request) {
@@ -185,7 +175,7 @@ func (s *Server) streamVideo(w http.ResponseWriter, r *http.Request) {
 		s.t.GetMetadata,
 	)
 	if err != nil {
-		http.Error(w, "video not found", http.StatusNotFound)
+		utils.WriteError(w, http.StatusNotFound, "video not found")
 		return
 	}
 	defer func() {

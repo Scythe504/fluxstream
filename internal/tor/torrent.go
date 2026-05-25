@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/anacrolix/torrent"
-	"github.com/scythe504/fluxstream/internal"
+	"github.com/scythe504/fluxstream/internal/utils"
 )
 
 type TorrentManager struct {
@@ -96,7 +96,7 @@ func (tr *TorrentManager) AddMagnet(id, magnetLink string) error {
 	// Check if at least one valid video file exists
 	hasVideo := false
 	for _, f := range files {
-		if internal.IsVideoFile(filepath.Ext(f.DisplayPath())) {
+		if utils.IsVideoFile(filepath.Ext(f.DisplayPath())) {
 			hasVideo = true
 			break
 		}
@@ -210,7 +210,7 @@ func (tr *TorrentManager) getMainVideoFile(videoId string) (*torrent.File, error
 	var best *torrent.File
 	for i := range files {
 		ext := strings.ToLower(filepath.Ext(files[i].DisplayPath()))
-		if !internal.IsVideoFile(ext) {
+		if !utils.IsVideoFile(ext) {
 			continue
 		}
 		if best == nil || files[i].Length() > best.Length() {
@@ -242,7 +242,7 @@ func (tr *TorrentManager) GetMetadata(videoId string) (*FileMetadata, error) {
 		Path:      path,
 		Length:    mainFile.Length(),
 		Extension: ext,
-		IsVideo:   internal.IsVideoFile(ext),
+		IsVideo:   utils.IsVideoFile(ext),
 	}
 
 	tr.mu.RUnlock()

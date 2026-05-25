@@ -10,7 +10,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/scythe504/fluxstream/internal"
+	"github.com/scythe504/fluxstream/internal/utils"
 )
 
 // Start runs docker-compose up and displays URLs once ready
@@ -196,7 +196,7 @@ func Status() error {
 // PrintAccessURLs shows both local and LAN URLs where the app is accessible.
 func PrintAccessURLs(port string) {
 	localURL := fmt.Sprintf("http://localhost:%s", port)
-	lanIP := internal.GetLocalIP()
+	lanIP := utils.GetLocalIP()
 	lanURL := fmt.Sprintf("http://%s:%s", lanIP, port)
 
 	fmt.Println()
