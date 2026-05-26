@@ -24,6 +24,7 @@ func (s *Server) RegisterRoutes() http.Handler {
 	video.HandleFunc("", s.listVideos).Methods("GET", "OPTIONS")
 	video.HandleFunc("/{videoId}/metadata", s.getVideoMetadata).Methods("GET", "OPTIONS")
 	video.HandleFunc("/{videoId}/stream", s.streamVideo).Methods("GET", "HEAD", "OPTIONS")
+	video.HandleFunc("/{videoId}/subs", s.serveSubtitles).Methods("GET", "HEAD", "OPTIONS")
 	torrent.HandleFunc("/{videoId}/stats/stream", s.torrentStatsStream).Methods("GET")
 	torrent.HandleFunc("/{videoId}", s.deleteTorrent).Methods("DELETE", "OPTIONS")
 	providers := r.PathPrefix("/providers")
@@ -72,8 +73,6 @@ func (s *Server) reverseProxyProvider(w http.ResponseWriter, r *http.Request) {
 	// strip /plugins/{provider} prefix to get the path to forward
 	providerPath := strings.TrimPrefix(r.URL.Path, "/providers/"+providerName)
 
-	log.Println("Path: ", providerPath)
-
 	p, ok := s.providers.Load(providerName)
 	if !ok {
 		pr := provider.InitProvider(providerName, "http://localhost:8081")
@@ -90,6 +89,13 @@ func (s *Server) reverseProxyProvider(w http.ResponseWriter, r *http.Request) {
 		req.SetURL(prov.BaseUrl)
 		req.Out.URL.Path = providerPath
 		req.Out.URL.RawQuery = req.In.URL.RawQuery
+	}
+	prov.Proxy.ModifyResponse = func(resp *http.Response) error {
+		resp.Header.Del("Access-Control-Allow-Origin")
+		resp.Header.Del("Access-Control-Allow-Methods")
+		resp.Header.Del("Access-Control-Allow-Headers")
+		resp.Header.Del("Access-Control-Allow-Credentials")
+		return nil
 	}
 
 	prov.Proxy.ServeHTTP(w, r)

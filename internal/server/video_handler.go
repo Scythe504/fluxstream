@@ -8,6 +8,7 @@ import (
 	"mime"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"time"
 
@@ -194,4 +195,33 @@ func (s *Server) streamVideo(w http.ResponseWriter, r *http.Request) {
 
 	// Stream with actual filename
 	http.ServeContent(w, r, meta.Name, time.Now(), reader)
+}
+
+func (s *Server) serveSubtitles(w http.ResponseWriter, r *http.Request) {
+	videoId := mux.Vars(r)["videoId"]
+
+	video, err := s.db.GetVideo(videoId)
+	if err != nil {
+		utils.WriteError(w, http.StatusNotFound, "no file found in database")
+		return
+	}
+
+	inputPath := video.FilePath
+	if utils.FileExists(video.FilePath + ".part") {
+		inputPath = video.FilePath + ".part"
+	}
+
+	if !utils.FileExists(inputPath) {
+		utils.WriteError(w, http.StatusNotFound, "video file not found on disk")
+		return
+	}
+
+	cmd := exec.CommandContext(r.Context(), "ffmpeg", 
+		"-i", inputPath, "-map", "0:s:0",
+		"-f", "webvtt", "pipe:1", "-y",
+	)
+
+	w.Header().Set("Content-Type", "text/vtt")
+	cmd.Stdout = w
+	cmd.Run()
 }

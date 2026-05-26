@@ -21,7 +21,7 @@ func InitProvider(name string, baseURL string) *Provider {
 
 	proxy := &httputil.ReverseProxy{
 		Transport: &http.Transport{
-			ResponseHeaderTimeout: 10 * time.Second,
+			ResponseHeaderTimeout: 15 * time.Second,
 		},
 	}
 

@@ -250,14 +250,14 @@ func (tr *TorrentManager) GetMetadata(videoId string) (*FileMetadata, error) {
 }
 
 type TorrentStats struct {
-	BytesCompleted int64 `json:"bytes_completed"`
-	BytesMissing int64 `json:"bytes_missing"`
-	TotalBytes int64 `json:"total_bytes"`
-	Progress float64 `json:"progress"`
-	ActivePeers int `json:"active_peers"`
-	TotalPeers int `json:"total_peers"`
-	DownloadSpeed int64 `json:"download_speed"`
-	UploadSpeed int64 `json:"upload_speed"`
+	BytesCompleted int64   `json:"bytes_completed"`
+	BytesMissing   int64   `json:"bytes_missing"`
+	TotalBytes     int64   `json:"total_bytes"`
+	Progress       float64 `json:"progress"`
+	ActivePeers    int     `json:"active_peers"`
+	TotalPeers     int     `json:"total_peers"`
+	DownloadSpeed  int64   `json:"download_speed"`
+	UploadSpeed    int64   `json:"upload_speed"`
 }
 
 func (tr *TorrentManager) GetStats(videoId string, prevDown, prevUp int64) (*TorrentStats, int64, int64, error) {
@@ -277,19 +277,19 @@ func (tr *TorrentManager) GetStats(videoId string, prevDown, prevUp int64) (*Tor
 	currentDown := stats.BytesRead.Int64()
 	currentUp := stats.BytesWritten.Int64()
 
-	var progress float64 
+	var progress float64
 	if total > 0 {
 		progress = float64(completed) / float64(total)
 	}
 
 	return &TorrentStats{
 		BytesCompleted: completed,
-		BytesMissing: missing,
-		TotalBytes: total,
-		Progress: progress,
-		ActivePeers: stats.ActivePeers,
-		TotalPeers: stats.TotalPeers,
-		DownloadSpeed: currentDown - prevDown,
-		UploadSpeed: currentUp - prevUp,
+		BytesMissing:   missing,
+		TotalBytes:     total,
+		Progress:       progress,
+		ActivePeers:    stats.ActivePeers,
+		TotalPeers:     stats.TotalPeers,
+		DownloadSpeed:  currentDown - prevDown,
+		UploadSpeed:    currentUp - prevUp,
 	}, currentDown, currentUp, nil
 }
