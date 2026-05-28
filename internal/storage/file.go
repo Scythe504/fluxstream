@@ -14,7 +14,7 @@ func (s *service) SaveForLater(videoId string, reader io.Reader, meta tor.FileMe
 		return "", fmt.Errorf("file %s is not a recognized video type", meta.Name)
 	}
 
-	fileName := fmt.Sprintf(meta.Name)
+	fileName := meta.Name
 	targetPath := filepath.Join(s.dataDir, fileName)
 
 	file, err := os.Create(targetPath)

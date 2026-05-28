@@ -6,29 +6,29 @@ import (
 	"net/http"
 	"os"
 	"strconv"
-	"sync"
 	"time"
 
 	_ "github.com/joho/godotenv/autoload"
 	"github.com/scythe504/fluxstream/internal/database"
+	"github.com/scythe504/fluxstream/internal/provider"
 	"github.com/scythe504/fluxstream/internal/tor"
 )
 
 type Server struct {
-	port int
-	db   database.Service
-	t    tor.TorrentManager
-	providers sync.Map
+	port      int
+	db        database.Service
+	t         tor.TorrentManager
+	providers *provider.Manager
 }
 
 func NewServer() *http.Server {
 	port, _ := strconv.Atoi(os.Getenv("PORT"))
 	// ctx := context.Background()
 	NewServer := &Server{
-		port: port,
-		db:   database.New(),
-		t:    tor.New(42069),
-		providers: sync.Map{},
+		port:      port,
+		db:        database.New(),
+		t:         tor.New(42069),
+		providers: provider.NewManager(),
 	}
 
 	// Declare Server config

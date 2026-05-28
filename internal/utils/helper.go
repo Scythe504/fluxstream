@@ -4,9 +4,12 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"log"
 	"math/big"
 	"net"
+	"net/http"
 	"os"
+	"sort"
 	"strings"
 )
 
@@ -95,4 +98,24 @@ func GetLocalIP() string {
 		}
 	}
 	return "127.0.0.1"
+}
+
+func LogHandlerError(r *http.Request, handler string, err error, fields map[string]any) {
+	var b strings.Builder
+	fmt.Fprintf(&b, "handler=%s method=%s path=%s", handler, r.Method, r.URL.Path)
+	if r.URL.RawQuery != "" {
+		fmt.Fprintf(&b, " query=%q", r.URL.RawQuery)
+	}
+
+	keys := make([]string, 0, len(fields))
+	for key := range fields {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	for _, key := range keys {
+		fmt.Fprintf(&b, " %s=%v", key, fields[key])
+	}
+
+	log.Printf("%s error=%v", b.String(), err)
 }

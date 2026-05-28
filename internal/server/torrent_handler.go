@@ -3,7 +3,6 @@ package server
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"time"
@@ -17,7 +16,9 @@ func (s *Server) torrentStatsStream(w http.ResponseWriter, r *http.Request) {
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		http.Error(w, "streaming not supported", http.StatusInternalServerError)
+		err := fmt.Errorf("response writer does not support flushing")
+		utils.LogHandlerError(r, "torrentStatsStream", err, map[string]any{"videoId": videoId})
+		utils.WriteError(w, http.StatusInternalServerError, "streaming not supported")
 		return
 	}
 
@@ -37,6 +38,7 @@ func (s *Server) torrentStatsStream(w http.ResponseWriter, r *http.Request) {
 		case <-ticker.C:
 			stats, currentDown, currentUp, err := s.t.GetStats(videoId, prevDown, prevUp)
 			if err != nil {
+				utils.LogHandlerError(r, "torrentStatsStream", err, map[string]any{"videoId": videoId})
 				fmt.Fprintf(w, "data: {\"error\": \"%s\"}\n\n", err.Error())
 				flusher.Flush()
 				continue
@@ -64,6 +66,7 @@ func (s *Server) deleteTorrent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		utils.LogHandlerError(r, "deleteTorrent", err, map[string]any{"videoId": videoId})
 		utils.WriteError(w, http.StatusBadRequest, "invalid json body")
 		return
 	}
@@ -71,27 +74,29 @@ func (s *Server) deleteTorrent(w http.ResponseWriter, r *http.Request) {
 	if body.DeleteResource {
 		video, err := s.db.GetVideo(videoId)
 		if err != nil {
+			utils.LogHandlerError(r, "deleteTorrent", err, map[string]any{"videoId": videoId})
 			utils.WriteError(w, http.StatusNotFound, "video not found")
 			return
 		}
 
 		if err := os.Remove(video.FilePath); err != nil && !os.IsNotExist(err) {
-			log.Printf("[DeleteTorrent] failed to remove file %s: %v\n", video.FilePath, err)
+			utils.LogHandlerError(r, "deleteTorrent", err, map[string]any{"videoId": videoId, "filePath": video.FilePath})
 		}
 
 		partPath := video.FilePath + ".part"
 		if err := os.Remove(partPath); err != nil && !os.IsNotExist(err) {
-			log.Printf("[DeleteTorrent] failed to remove part file %s: %v\n", partPath, err)
+			utils.LogHandlerError(r, "deleteTorrent", err, map[string]any{"videoId": videoId, "partPath": partPath})
 		}
 	}
 
 	if err := s.t.CleanupTorrent(videoId); err != nil {
+		utils.LogHandlerError(r, "deleteTorrent", err, map[string]any{"videoId": videoId})
 		utils.WriteError(w, http.StatusInternalServerError, "failed to cleanup torrent")
 		return
 	}
 
 	if err := s.db.DeleteVideo(videoId); err != nil {
-		log.Printf("[deleteTorrent] failed to delete db record: %v", err)
+		utils.LogHandlerError(r, "deleteTorrent", err, map[string]any{"videoId": videoId})
 	}
 
 	w.WriteHeader(http.StatusNoContent)

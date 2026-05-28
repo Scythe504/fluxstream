@@ -1,10 +1,10 @@
 package server
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"mime"
 	"net/http"
 	"os"
@@ -22,7 +22,8 @@ import (
 func (s *Server) listVideos(w http.ResponseWriter, r *http.Request) {
 	videos, err := s.db.GetAllVideos()
 	if err != nil {
-		utils.WriteError(w, http.StatusInternalServerError, fmt.Sprintf("failed to fetch videos: %v", err))
+		utils.LogHandlerError(r, "listVideos", err, nil)
+		utils.WriteError(w, http.StatusInternalServerError, "failed to fetch videos")
 		return
 	}
 
@@ -30,11 +31,11 @@ func (s *Server) listVideos(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) createVideo(w http.ResponseWriter, r *http.Request) {
-	// 1. Get magnet link from request body
+	// Get magnet link from request body
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		log.Println("[StartVideo] Invalid Request body", err)
-		utils.WriteError(w, http.StatusBadRequest, "Invalid json body")
+		utils.LogHandlerError(r, "createVideo", err, nil)
+		utils.WriteError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 	defer r.Body.Close()
@@ -43,20 +44,26 @@ func (s *Server) createVideo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err = json.Unmarshal(body, &link); err != nil {
-		log.Println("[StartVideo] Invalid Json Body", err)
-		utils.WriteError(w, http.StatusBadRequest, "Failed to Parse JSON")
+		utils.LogHandlerError(r, "createVideo", err, nil)
+		utils.WriteError(w, http.StatusBadRequest, "failed to parse JSON body")
 		return
 	}
 
 	videoId := utils.RandomId()
 
 	if err = s.t.AddMagnet(videoId, link.MagnetLink); err != nil {
-		log.Println("[StartVideo] failed to get the magnet link")
-		utils.WriteError(w, http.StatusBadRequest, "failed to get video")
+		utils.LogHandlerError(r, "createVideo", err, map[string]any{"magnetLink": link.MagnetLink})
+		utils.WriteError(w, http.StatusBadRequest, "failed to add magnet link")
 		return
 	}
 
 	filePath, err := s.t.GetMetadata(videoId)
+	if err != nil {
+		utils.LogHandlerError(r, "createVideo", err, map[string]any{"videoId": videoId})
+		utils.WriteError(w, http.StatusInternalServerError, "failed to retrieve torrent metadata")
+		return
+	}
+
 	video := database.Video{
 		Id:         videoId,
 		MagnetLink: link.MagnetLink,
@@ -65,8 +72,8 @@ func (s *Server) createVideo(w http.ResponseWriter, r *http.Request) {
 	}
 	// Insert Video row into SQLite
 	if err = s.db.CreateVideo(video); err != nil {
-		log.Println("[StartVideo] failed to persist video", err)
-		utils.WriteError(w, http.StatusInternalServerError, "failed to persist video")
+		utils.LogHandlerError(r, "createVideo", err, map[string]any{"videoId": videoId, "video": video})
+		utils.WriteError(w, http.StatusInternalServerError, "failed to persist video metadata")
 		return
 	}
 
@@ -75,8 +82,8 @@ func (s *Server) createVideo(w http.ResponseWriter, r *http.Request) {
 
 // Resolve returns a video reader + metadata by checking torrent, cache, and disk.
 // Order of preference:
-// 1. Active torrent stream
-// 2. Cached metadata or DB record + on-disk file
+// - Active torrent stream
+// - Cached metadata or DB record + on-disk file
 func ResolveStream(
 	videoId string,
 	getReader func(string) *torrent.Reader,
@@ -138,17 +145,21 @@ func (s *Server) getVideoMetadata(w http.ResponseWriter, r *http.Request) {
 	// Fallback: get from DB and disk
 	video, err := s.db.GetVideo(videoId)
 	if err != nil {
+		utils.LogHandlerError(r, "getVideoMetadata", err, map[string]any{"videoId": videoId})
 		utils.WriteError(w, http.StatusNotFound, "video not found")
 		return
 	}
 
 	if video.FilePath == "" || !utils.FileExists(video.FilePath) {
+		err := fmt.Errorf("video file does not exist on disk: %s", video.FilePath)
+		utils.LogHandlerError(r, "getVideoMetadata", err, map[string]any{"videoId": videoId})
 		utils.WriteError(w, http.StatusNotFound, "metadata unavailable")
 		return
 	}
 
 	info, err := os.Stat(video.FilePath)
 	if err != nil {
+		utils.LogHandlerError(r, "getVideoMetadata", err, map[string]any{"videoId": videoId, "filePath": video.FilePath})
 		utils.WriteError(w, http.StatusInternalServerError, "failed to read file metadata")
 		return
 	}
@@ -176,6 +187,7 @@ func (s *Server) streamVideo(w http.ResponseWriter, r *http.Request) {
 		s.t.GetMetadata,
 	)
 	if err != nil {
+		utils.LogHandlerError(r, "streamVideo", err, map[string]any{"videoId": videoId})
 		utils.WriteError(w, http.StatusNotFound, "video not found")
 		return
 	}
@@ -202,6 +214,7 @@ func (s *Server) serveSubtitles(w http.ResponseWriter, r *http.Request) {
 
 	video, err := s.db.GetVideo(videoId)
 	if err != nil {
+		utils.LogHandlerError(r, "serveSubtitles", err, map[string]any{"videoId": videoId})
 		utils.WriteError(w, http.StatusNotFound, "no file found in database")
 		return
 	}
@@ -212,16 +225,35 @@ func (s *Server) serveSubtitles(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !utils.FileExists(inputPath) {
+		err := fmt.Errorf("video file not found on disk: %s", inputPath)
+		utils.LogHandlerError(r, "serveSubtitles", err, map[string]any{"videoId": videoId, "inputPath": inputPath})
 		utils.WriteError(w, http.StatusNotFound, "video file not found on disk")
 		return
 	}
 
+	var stdoutBuf bytes.Buffer
+	var stderrBuf bytes.Buffer
+
 	cmd := exec.CommandContext(r.Context(), "ffmpeg", 
 		"-i", inputPath, "-map", "0:s:0",
-		"-f", "webvtt", "pipe:1", "-y",
+		"-c:s", "webvtt", "-f", "webvtt", "pipe:1", "-y",
 	)
+	cmd.Stdout = &stdoutBuf
+	cmd.Stderr = &stderrBuf
 
 	w.Header().Set("Content-Type", "text/vtt")
-	cmd.Stdout = w
-	cmd.Run()
+
+	err = cmd.Run()
+	if err != nil {
+		utils.LogHandlerError(r, "serveSubtitles", err, map[string]any{
+			"videoId":      videoId,
+			"inputPath":    inputPath,
+			"ffmpegStderr": stderrBuf.String(),
+		})
+		// Fallback to a valid empty WebVTT file if extraction fails (e.g., no subtitles in MP4/AVI)
+		w.Write([]byte("WEBVTT\n"))
+		return
+	}
+
+	w.Write(stdoutBuf.Bytes())
 }

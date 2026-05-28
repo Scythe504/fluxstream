@@ -1,14 +1,10 @@
 package server
 
 import (
-	"encoding/json"
-	"log"
 	"net/http"
-	"net/http/httputil"
-	"strings"
 
 	"github.com/gorilla/mux"
-	"github.com/scythe504/fluxstream/internal/provider"
+	"github.com/scythe504/fluxstream/internal/utils"
 )
 
 func (s *Server) RegisterRoutes() http.Handler {
@@ -18,8 +14,12 @@ func (s *Server) RegisterRoutes() http.Handler {
 
 	r.HandleFunc("/", s.HelloWorldHandler).Methods("GET", "OPTIONS")
 
-	video := r.PathPrefix("/videos").Subrouter()
-	torrent := r.PathPrefix("/torrents").Subrouter()
+	api := r.PathPrefix("/api").Subrouter()
+
+	video := api.PathPrefix("/videos").Subrouter()
+	torrent := api.PathPrefix("/torrents").Subrouter()
+	providers := api.PathPrefix("/providers").Subrouter()
+
 	video.HandleFunc("", s.createVideo).Methods("POST", "OPTIONS")
 	video.HandleFunc("", s.listVideos).Methods("GET", "OPTIONS")
 	video.HandleFunc("/{videoId}/metadata", s.getVideoMetadata).Methods("GET", "OPTIONS")
@@ -27,7 +27,7 @@ func (s *Server) RegisterRoutes() http.Handler {
 	video.HandleFunc("/{videoId}/subs", s.serveSubtitles).Methods("GET", "HEAD", "OPTIONS")
 	torrent.HandleFunc("/{videoId}/stats/stream", s.torrentStatsStream).Methods("GET")
 	torrent.HandleFunc("/{videoId}", s.deleteTorrent).Methods("DELETE", "OPTIONS")
-	providers := r.PathPrefix("/providers")
+	providers.HandleFunc("/", s.listVerifiedProviders).Methods("GET", "OPTIONS")
 	providers.PathPrefix("/{provider}/").HandlerFunc(s.reverseProxyProvider)
 
 	return r
@@ -52,51 +52,6 @@ func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 }
 
 func (s *Server) HelloWorldHandler(w http.ResponseWriter, r *http.Request) {
-	resp := make(map[string]string)
-	resp["message"] = "Hello World"
-
-	jsonResp, err := json.Marshal(resp)
-	if err != nil {
-		log.Fatalf("error handling JSON marshal. Err: %v", err)
-	}
-
-	_, _ = w.Write(jsonResp)
-}
-
-func (s *Server) reverseProxyProvider(w http.ResponseWriter, r *http.Request) {
-	providerName := mux.Vars(r)["provider"]
-	if providerName == "" {
-		http.Error(w, "provider missing", http.StatusBadRequest)
-		return
-	}
-
-	// strip /plugins/{provider} prefix to get the path to forward
-	providerPath := strings.TrimPrefix(r.URL.Path, "/providers/"+providerName)
-
-	p, ok := s.providers.Load(providerName)
-	if !ok {
-		pr := provider.InitProvider(providerName, "http://localhost:8081")
-		if pr == nil {
-			http.Error(w, "failed to init provider", http.StatusBadGateway)
-			return
-		}
-		s.providers.Store(providerName, pr)
-		p = pr
-	}
-
-	prov := p.(*provider.Provider)
-	prov.Proxy.Rewrite = func(req *httputil.ProxyRequest) {
-		req.SetURL(prov.BaseUrl)
-		req.Out.URL.Path = providerPath
-		req.Out.URL.RawQuery = req.In.URL.RawQuery
-	}
-	prov.Proxy.ModifyResponse = func(resp *http.Response) error {
-		resp.Header.Del("Access-Control-Allow-Origin")
-		resp.Header.Del("Access-Control-Allow-Methods")
-		resp.Header.Del("Access-Control-Allow-Headers")
-		resp.Header.Del("Access-Control-Allow-Credentials")
-		return nil
-	}
-
-	prov.Proxy.ServeHTTP(w, r)
+	resp := map[string]string{"message": "Hello World"}
+	utils.WriteJSON(w, http.StatusOK, resp)
 }
