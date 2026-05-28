@@ -38,3 +38,4 @@ dist/
 fluxstream.db 
 fluxstream.db-shm 
 fluxstream.db-wal
+./data

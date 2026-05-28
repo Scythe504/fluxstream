@@ -135,7 +135,11 @@ func InitProvider(name string, baseURL string, providerMediaType MediaType) *Pro
 	proxy.Rewrite = func(req *httputil.ProxyRequest) {
 		req.SetURL(p.BaseUrl)
 		remainingPath := strings.TrimPrefix(req.In.URL.Path, "/api/providers/"+p.Name)
-		req.Out.URL.Path = "/api" + remainingPath
+		if remainingPath == "" || remainingPath == "/" {
+			req.Out.URL.Path = "/api/"
+		} else {
+			req.Out.URL.Path = "/api" + remainingPath
+		}
 		req.Out.URL.RawQuery = req.In.URL.RawQuery
 	}
 
