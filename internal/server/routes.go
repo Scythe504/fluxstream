@@ -13,6 +13,7 @@ func (s *Server) RegisterRoutes() http.Handler {
 	r.Use(s.corsMiddleware)
 
 	r.HandleFunc("/", s.HelloWorldHandler).Methods("GET", "OPTIONS")
+	r.HandleFunc("/health", s.healthHandler).Methods("GET", "OPTIONS")
 
 	api := r.PathPrefix("/api").Subrouter()
 
@@ -37,12 +38,18 @@ func (s *Server) RegisterRoutes() http.Handler {
 // CORS middleware
 func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*") // Wildcard allows all origins
+		// CORS Headers
+		origin := r.Header.Get("Origin")
+		if origin != "" {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+		} else {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+		}
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH")
 		w.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type")
-		w.Header().Set("Access-Control-Allow-Credentials", "false") // Credentials not allowed with wildcard origins
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
 
-		// Handle preflight OPTIONS
+		// Handle preflight OPTIONS requests
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -51,8 +58,12 @@ func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
-
 func (s *Server) HelloWorldHandler(w http.ResponseWriter, r *http.Request) {
 	resp := map[string]string{"message": "Hello World"}
+	utils.WriteJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
+	resp := s.db.Health()
 	utils.WriteJSON(w, http.StatusOK, resp)
 }

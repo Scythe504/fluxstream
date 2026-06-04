@@ -15,25 +15,28 @@ import (
 
 // Start runs docker-compose up and displays URLs once ready
 func Start() error {
-	fmt.Println(colorize(colorBlue, "Starting FluxStream...\n"))
+	printHeader("STARTING FLUXSTREAM")
 
 	// Check if Docker is installed
+	printStep("Verifying system dependencies...")
 	if !IsDockerInstalled() {
 		printError("Docker is not installed.")
 		fmt.Println("\nPlease install Docker first:")
-		printInfo("  https://docs.docker.com/desktop/#next-steps")
-		printInfo("  https://docs.docker.com/engine/")
+		printInfo("https://docs.docker.com/desktop/#next-steps")
+		printInfo("https://docs.docker.com/engine/")
 		return fmt.Errorf("docker not installed")
 	}
+	printSubstep("Docker engine is installed")
 
 	// Check if Docker daemon is running
 	if err := DockerInfo(); err != nil {
 		printError("Docker daemon is not running.")
 		fmt.Println("\nPlease start Docker and try again:")
-		fmt.Println("  - macOS/Windows: Open Docker Desktop")
-		fmt.Println("  - Linux: sudo systemctl start docker")
+		printSubstep("macOS/Windows: Open Docker Desktop")
+		printSubstep("Linux: sudo systemctl start docker")
 		return fmt.Errorf("docker daemon not running: %v", err)
 	}
+	printSubstep("Docker daemon is active and running")
 
 	// Ensure docker-compose.yml exists
 	dockerComposeFilePath, err := getDockerComposeFilePath()
@@ -48,10 +51,8 @@ func Start() error {
 	}
 
 	// Start FluxStream containers
+	printStep("Launching containers via Docker Compose...")
 	err = DockerCompose("up", "-d")
-
-	printInfo("Running Docker Compose...")
-
 	if err != nil {
 		printError(fmt.Sprintf("Failed to start FluxStream: %v", err))
 		return err
@@ -69,22 +70,27 @@ func Start() error {
 var dockerComposeTemplate string
 
 func Setup() error {
+	printHeader("FLUXSTREAM SETUP")
+
+	printStep("Verifying system dependencies...")
 	if !IsDockerInstalled() {
 		printError("Docker is not installed.")
 		fmt.Println("\nPlease install Docker first:")
-		printInfo("  https://docs.docker.com/desktop/#next-steps")
-		printInfo("  https://docs.docker.com/engine/")
+		printInfo("https://docs.docker.com/desktop/#next-steps")
+		printInfo("https://docs.docker.com/engine/")
 		return fmt.Errorf("docker not installed")
 	}
 
 	if err := DockerInfo(); err != nil {
 		printError("Docker daemon is not running.")
 		fmt.Println("\nPlease start Docker and try again:")
-		fmt.Println("  - macOS/Windows: Open Docker Desktop")
-		fmt.Println("  - Linux: sudo systemctl start docker")
+		printSubstep("macOS/Windows: Open Docker Desktop")
+		printSubstep("Linux: sudo systemctl start docker")
 		return fmt.Errorf("docker daemon not running: %v", err)
 	}
+	printSubstep("Docker connection verified")
 
+	printStep("Creating application directories...")
 	// Base config dir (OS-appropriate)
 	baseConfigDir, err := os.UserConfigDir()
 	if err != nil {
@@ -116,7 +122,9 @@ func Setup() error {
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		return fmt.Errorf("failed to create data directory: %v", err)
 	}
+	printSubstep("Downloads directory: " + dataDir)
 
+	printStep("Writing docker configuration...")
 	// Normalize Windows paths to use forward slashes for Docker
 	normalizedDataDir := strings.ReplaceAll(dataDir, "\\", "/")
 
@@ -129,20 +137,21 @@ func Setup() error {
 		return fmt.Errorf("failed to write docker-compose.yml: %v", err)
 	}
 
-	printSuccess("FluxStream setup complete!")
+	printSuccess("FluxStream setup completed!")
 	fmt.Printf("\n%s %s\n", colorize(colorBlue, "Config file:"), composeFile)
-	fmt.Printf("%s %s\n", colorize(colorBlue, "Downloads:"), normalizedDataDir)
+	fmt.Printf("%s %s\n", colorize(colorBlue, "Downloads:  "), normalizedDataDir)
 	fmt.Printf("\n%s\n", colorize(colorGreen, "Ready to start! Run: fluxstream start"))
-	fmt.Printf("\n%s\n", colorize(colorCyan, "Docs: https://docs.fluxstream.app"))
+	fmt.Printf("%s\n\n", colorize(colorCyan, "Docs:        https://docs.fluxstream.app"))
 
 	return nil
 }
 
 // Status checks whether FluxStream's Docker containers and backend are running.
 func Status() error {
-	fmt.Println(colorize(colorBlue, "Checking FluxStream status...\n"))
+	printHeader("FLUXSTREAM STATUS")
 
 	// Check if Docker is installed
+	printStep("Checking system services...")
 	if !IsDockerInstalled() {
 		printError("Docker is not installed.")
 		fmt.Println("\nPlease install Docker before running FluxStream.")
@@ -153,12 +162,14 @@ func Status() error {
 	if err := DockerInfo(); err != nil {
 		printError("Docker daemon is not running.")
 		fmt.Println("\nStart Docker and try again:")
-		fmt.Println("  - macOS/Windows: Open Docker Desktop")
-		fmt.Println("  - Linux: sudo systemctl start docker")
+		printSubstep("macOS/Windows: Open Docker Desktop")
+		printSubstep("Linux: sudo systemctl start docker")
 		return fmt.Errorf("docker daemon not running: %v", err)
 	}
+	printSubstep("Docker service is active")
 
 	// Check if FluxStream containers are running
+	printStep("Querying container status...")
 	cmd := exec.Command("docker", "ps", "--filter", "name=fluxstream", "--format", "{{.Names}}: {{.Status}}")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -173,19 +184,23 @@ func Status() error {
 		return nil
 	}
 
-	printSuccess("Active FluxStream containers:")
-	fmt.Println(output)
+	printSuccess("Active containers:")
+	lines := strings.Split(output, "\n")
+	for _, l := range lines {
+		printSubstep(l)
+	}
 
-	//  Check backend health endpoint
+	// Check backend health endpoint
+	printStep("Testing streaming API endpoint...")
 	resp, err := http.Get("http://localhost:8080/health")
 	if err != nil {
-		printError("Backend API not responding at http://localhost:8080")
+		printError("Streaming API not responding at http://localhost:8080/health")
 		return nil
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusOK {
-		printSuccess("Backend is running and healthy.")
+		printSuccess("Backend API is online and fully healthy.")
 	} else {
 		printError(fmt.Sprintf("Backend responded with status: %s", resp.Status))
 	}
@@ -201,19 +216,21 @@ func PrintAccessURLs(port string) {
 
 	fmt.Println()
 	printInfo("FluxStream web interface available at:")
-	fmt.Printf("  %s %s\n", colorize(colorCyan, "Local:"), colorize(colorGreen, localURL))
+	fmt.Printf("  %s %s\n", colorize(colorCyan, "Local:  "), colorize(colorGreen, localURL))
 	fmt.Printf("  %s %s\n\n", colorize(colorCyan, "Network:"), colorize(colorGreen, lanURL))
-	fmt.Printf(" %s \n\n", colorize(colorYellow, "WARN: If Network IP is 172.*, it will not open in other devices."))
+	if strings.HasPrefix(lanIP, "172.") {
+		fmt.Printf(" %s \n\n", colorize(colorYellow, "WARN: Network IP 172.* (Docker bridge) will not open on other devices."))
+	}
 }
 
 func Where() error {
-	fmt.Println()
+	printHeader("FLUXSTREAM ENDPOINTS")
 
 	// 1. Check if Docker is installed
 	if !IsDockerInstalled() {
 		printError("Docker is not installed.")
 		fmt.Println("\nPlease install Docker first:")
-		printInfo("  https://docs.docker.com/desktop/#next-steps")
+		printInfo("https://docs.docker.com/desktop/#next-steps")
 		return fmt.Errorf("docker not installed")
 	}
 
@@ -221,8 +238,8 @@ func Where() error {
 	if err := DockerInfo(); err != nil {
 		printError("Docker daemon is not running.")
 		fmt.Println("Start Docker and try again:")
-		fmt.Println("  - macOS/Windows: Open Docker Desktop")
-		fmt.Println("  - Linux: sudo systemctl start docker")
+		printSubstep("macOS/Windows: Open Docker Desktop")
+		printSubstep("Linux: sudo systemctl start docker")
 		return fmt.Errorf("docker daemon not running: %v", err)
 	}
 
@@ -241,7 +258,7 @@ func Where() error {
 	}
 
 	if len(output) == 0 {
-		printError("FluxStream is not running.")
+		printError("FluxStream is not currently running.")
 		fmt.Println("Run it using:")
 		printInfo("fluxstream start")
 		return nil
@@ -254,14 +271,14 @@ func Where() error {
 }
 
 func Stop() error {
-	fmt.Println(colorize(colorBlue, "Stopping FluxStream...\n"))
+	printHeader("STOPPING FLUXSTREAM")
 
 	// Check if Docker is installed
 	if !IsDockerInstalled() {
 		printError("Docker is not installed.")
 		fmt.Println("\nPlease install Docker first:")
-		printInfo("  https://docs.docker.com/desktop/#next-steps")
-		printInfo("  https://docs.docker.com/engine/")
+		printInfo("https://docs.docker.com/desktop/#next-steps")
+		printInfo("https://docs.docker.com/engine/")
 		return fmt.Errorf("docker not installed")
 	}
 
@@ -269,8 +286,8 @@ func Stop() error {
 	if err := DockerInfo(); err != nil {
 		printError("Docker daemon is not running.")
 		fmt.Println("\nPlease start Docker and try again:")
-		fmt.Println("  - macOS/Windows: Open Docker Desktop")
-		fmt.Println("  - Linux: sudo systemctl start docker")
+		printSubstep("macOS/Windows: Open Docker Desktop")
+		printSubstep("Linux: sudo systemctl start docker")
 		return fmt.Errorf("docker daemon not running: %v", err)
 	}
 
@@ -286,16 +303,15 @@ func Stop() error {
 	}
 
 	// Stop FluxStream containers
+	printStep("Stopping docker containers...")
 	err = DockerCompose("down")
-
-	printInfo("Stopping Docker Compose...")
 
 	if err != nil {
 		printError(fmt.Sprintf("Failed to stop FluxStream: %v", err))
 		return err
 	}
 
-	printSuccess("fluxstream stopped successfully!")
+	printSuccess("All FluxStream containers gracefully stopped.")
 
 	return nil
 }

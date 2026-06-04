@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"mime"
 	"net/http"
 	"os"
@@ -25,6 +26,18 @@ func (s *Server) listVideos(w http.ResponseWriter, r *http.Request) {
 		utils.LogHandlerError(r, "listVideos", err, nil)
 		utils.WriteError(w, http.StatusInternalServerError, "failed to fetch videos")
 		return
+	}
+
+	// Trigger background loading of any inactive torrents from the database
+	for _, video := range videos {
+		go func(v database.Video) {
+			if reader := s.t.GetReader(v.Id); reader == nil {
+				log.Printf("[listVideos] Auto-resuming torrent in background: %s", v.Id)
+				if _, err := s.t.AddMagnet(v.MagnetLink); err != nil {
+					log.Printf("[listVideos] Failed to auto-resume torrent %s in background: %v", v.Id, err)
+				}
+			}
+		}(video)
 	}
 
 	utils.WriteJSON(w, http.StatusOK, videos)
@@ -49,35 +62,33 @@ func (s *Server) createVideo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	videoId := utils.RandomId()
-
-	if err = s.t.AddMagnet(videoId, link.MagnetLink); err != nil {
+	infoHash, err := s.t.AddMagnet(link.MagnetLink)
+	if err != nil {
 		utils.LogHandlerError(r, "createVideo", err, map[string]any{"magnetLink": link.MagnetLink})
 		utils.WriteError(w, http.StatusBadRequest, "failed to add magnet link")
 		return
 	}
 
-	filePath, err := s.t.GetMetadata(videoId)
+	filePath, err := s.t.GetMetadata(infoHash)
 	if err != nil {
-		utils.LogHandlerError(r, "createVideo", err, map[string]any{"videoId": videoId})
+		utils.LogHandlerError(r, "createVideo", err, map[string]any{"videoId": infoHash})
 		utils.WriteError(w, http.StatusInternalServerError, "failed to retrieve torrent metadata")
 		return
 	}
 
 	video := database.Video{
-		Id:         videoId,
+		Id:         infoHash,
 		MagnetLink: link.MagnetLink,
 		FilePath:   filepath.Join(os.Getenv("DOWNLOAD_PATH"), filePath.Name),
 		CreatedAt:  time.Now().UnixMilli(),
 	}
-	// Insert Video row into SQLite
 	if err = s.db.CreateVideo(video); err != nil {
-		utils.LogHandlerError(r, "createVideo", err, map[string]any{"videoId": videoId, "video": video})
+		// already exists, not an error — just continue
+		utils.LogHandlerError(r, "createVideo", err, map[string]any{"videoId": infoHash})
 		utils.WriteError(w, http.StatusInternalServerError, "failed to persist video metadata")
 		return
 	}
-
-	utils.WriteJSON(w, http.StatusOK, map[string]string{"video_id": videoId})
+	utils.WriteJSON(w, http.StatusOK, map[string]string{"video_id": infoHash})
 }
 
 // Resolve returns a video reader + metadata by checking torrent, cache, and disk.
@@ -88,7 +99,7 @@ func ResolveStream(
 	videoId string,
 	getReader func(string) *torrent.Reader,
 	getVideo func(string) (database.Video, error),
-	addMagnet func(string, string) error,
+	addMagnet func(string) (string, error),
 	getMetadata func(string) (*tor.FileMetadata, error),
 ) (io.ReadSeeker, *tor.FileMetadata, error) {
 
@@ -111,7 +122,7 @@ func ResolveStream(
 		return nil, nil, fmt.Errorf("video not found: %w", err)
 	}
 
-	if err := addMagnet(videoId, video.MagnetLink); err != nil {
+	if _, err := addMagnet(video.MagnetLink); err != nil {
 		return nil, nil, fmt.Errorf("failed to resume torrent: %w", err)
 	}
 
@@ -234,7 +245,7 @@ func (s *Server) serveSubtitles(w http.ResponseWriter, r *http.Request) {
 	var stdoutBuf bytes.Buffer
 	var stderrBuf bytes.Buffer
 
-	cmd := exec.CommandContext(r.Context(), "ffmpeg", 
+	cmd := exec.CommandContext(r.Context(), "ffmpeg",
 		"-i", inputPath, "-map", "0:s:0",
 		"-c:s", "webvtt", "-f", "webvtt", "pipe:1", "-y",
 	)

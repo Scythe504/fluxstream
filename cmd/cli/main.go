@@ -8,7 +8,7 @@ import (
 )
 
 var (
-	version = "0.1.3"
+	version = "0.2.0"
 )
 
 var rootCmd = &cobra.Command{
@@ -16,6 +16,9 @@ var rootCmd = &cobra.Command{
 	Short:   "fluxstream - Torrent media streamer",
 	Long:    `fluxstream-cli is a tool for running the fluxstream server and web on your desktop`,
 	Version: version,
+	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		commands.PrintLogo()
+	},
 }
 var startCmd = &cobra.Command{
 	Use:   "start",
@@ -64,6 +67,8 @@ func init() {
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(whereCmd)
 	rootCmd.AddCommand(stopCmd)
+
+	rootCmd.SetHelpTemplate(commands.GetLogoString() + "\n" + rootCmd.HelpTemplate())
 }
 
 func main() {

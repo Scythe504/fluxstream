@@ -12,7 +12,7 @@ type Video struct {
 
 func (s *service) CreateVideo(video Video) error {
 	stmt := `
-		INSERT INTO videos (
+		INSERT OR IGNORE INTO videos (
 			id,
 			magnet_link,
 			file_path,

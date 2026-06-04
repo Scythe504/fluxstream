@@ -34,12 +34,12 @@ func New(port int) TorrentManager {
 	cfg.ListenPort = port
 	cfg.DisableIPv6 = true
 	cfg.DisableUTP = false
-	cfg.DisableAggressiveUpload = true
+	cfg.DisableAggressiveUpload = false
 	cfg.NoUpload = false
 	cfg.Seed = true
 
 	// Performance tuning
-	cfg.MinDialTimeout = 5 * time.Second
+	cfg.MinDialTimeout = 10 * time.Second
 
 	// Try environment override first (for flexibility)
 	dataDir := os.Getenv("DOWNLOAD_PATH")
@@ -69,28 +69,38 @@ func New(port int) TorrentManager {
 	}
 }
 
-func (tr *TorrentManager) AddMagnet(id, magnetLink string) error {
+func (tr *TorrentManager) AddMagnet(magnetLink string) (string, error) {
 	tr.mu.Lock()
 	t, err := tr.cl.AddMagnet(magnetLink)
 	if err != nil {
 		tr.mu.Unlock()
-		return fmt.Errorf("failed to add magnet: %w", err)
+		return "", fmt.Errorf("failed to add magnet: %w", err)
 	}
+	infohash := t.InfoHash().HexString()
+
+	// If already tracked and has info, return immediately
+	if existing, ok := tr.torrents[infohash]; ok && existing != nil {
+		select {
+		case <-existing.GotInfo():
+			tr.mu.Unlock()
+			return infohash, nil
+		default:
+		}
+	}
+	tr.mu.Unlock() // UNLOCK before waiting for metadata to avoid blocking other operations
 
 	// Wait for torrent metadata (with timeout)
 	select {
 	case <-t.GotInfo():
-	case <-time.After(10 * time.Second):
+	case <-time.After(15 * time.Second):
 		t.Drop()
-		tr.mu.Unlock()
-		return fmt.Errorf("timeout waiting for metadata for id: %s", id)
+		return "", fmt.Errorf("timeout waiting for metadata for id: %s", infohash)
 	}
 
 	files := t.Files()
 	if len(files) == 0 {
 		t.Drop()
-		tr.mu.Unlock()
-		return fmt.Errorf("no files found in torrent for id: %s", id)
+		return "", fmt.Errorf("no files found in torrent for id: %s", infohash)
 	}
 
 	// Check if at least one valid video file exists
@@ -104,14 +114,15 @@ func (tr *TorrentManager) AddMagnet(id, magnetLink string) error {
 
 	if !hasVideo {
 		t.Drop() // prevent keeping useless torrents
-		tr.mu.Unlock()
-		return fmt.Errorf("no valid video files found for id: %s", id)
+		return "", fmt.Errorf("no valid video files found for id: %s", infohash)
 	}
 
-	// Save torrent handle
-	tr.torrents[id] = t
+	tr.mu.Lock()
+	if _, ok := tr.torrents[infohash]; !ok {
+		tr.torrents[infohash] = t
+	}
 	tr.mu.Unlock()
-	return nil
+	return infohash, nil
 }
 func (tr *TorrentManager) GetReader(id string) *torrent.Reader {
 	// Ensure torrent exists
