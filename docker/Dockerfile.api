@@ -18,7 +18,9 @@ RUN go install github.com/pressly/goose/v3/cmd/goose@latest
 FROM alpine:latest AS api
 RUN apk add --no-cache ca-certificates tzdata
 WORKDIR /app
+RUN mkdir -p /app/data
 COPY --from=builder /out/api /app/api
+ENV DB_URL=/app/data/fluxstream.db
 EXPOSE 8080
 CMD ["/app/api"]
 
