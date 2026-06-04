@@ -50,6 +50,29 @@ func Start() error {
 		return fmt.Errorf("docker-compose.yml not found at %s", dockerComposeFilePath)
 	}
 
+	// Ensure the fluxstream.db file exists on the host as a file, not a directory.
+	// This prevents Docker from creating a directory placeholder when performing a bind mount.
+	dbFilePath := filepath.Join(filepath.Dir(dockerComposeFilePath), "fluxstream.db")
+	if fi, err := os.Stat(dbFilePath); err == nil {
+		if fi.IsDir() {
+			printInfo("Correcting database folder placeholder to a file...")
+			if err := os.RemoveAll(dbFilePath); err != nil {
+				return fmt.Errorf("failed to clean database directory placeholder: %v", err)
+			}
+			file, err := os.Create(dbFilePath)
+			if err != nil {
+				return fmt.Errorf("failed to initialize database file: %v", err)
+			}
+			file.Close()
+		}
+	} else if os.IsNotExist(err) {
+		file, err := os.Create(dbFilePath)
+		if err != nil {
+			return fmt.Errorf("failed to initialize database file: %v", err)
+		}
+		file.Close()
+	}
+
 	// Start FluxStream containers
 	printStep("Launching containers via Docker Compose...")
 	err = DockerCompose("up", "-d")
@@ -101,12 +124,6 @@ func Setup() error {
 	configDir := filepath.Join(baseConfigDir, "fluxstream")
 	if err := os.MkdirAll(configDir, 0o700); err != nil {
 		return fmt.Errorf("failed to create config directory: %v", err)
-	}
-
-	// Create database directory under configDir
-	dbDataDir := filepath.Join(configDir, "data")
-	if err := os.MkdirAll(dbDataDir, 0o755); err != nil {
-		return fmt.Errorf("failed to create database directory: %v", err)
 	}
 
 	// Determine app data directory
@@ -220,10 +237,15 @@ func PrintAccessURLs(port string) {
 	lanIP := utils.GetLocalIP()
 	lanURL := fmt.Sprintf("http://%s:%s", lanIP, port)
 
+	localAPI := "http://localhost:8080"
+	lanAPI := fmt.Sprintf("http://%s:8080", lanIP)
+
 	fmt.Println()
-	printInfo("FluxStream web interface available at:")
-	fmt.Printf("  %s %s\n", colorize(colorCyan, "Local:  "), colorize(colorGreen, localURL))
-	fmt.Printf("  %s %s\n\n", colorize(colorCyan, "Network:"), colorize(colorGreen, lanURL))
+	printInfo("FluxStream services available at:")
+	fmt.Printf("  %s %s\n", colorize(colorCyan, "Web UI (Local):    "), colorize(colorGreen, localURL))
+	fmt.Printf("  %s %s\n", colorize(colorCyan, "Web UI (Network):  "), colorize(colorGreen, lanURL))
+	fmt.Printf("  %s %s\n", colorize(colorCyan, "API Server (Local):"), colorize(colorGreen, localAPI))
+	fmt.Printf("  %s %s\n\n", colorize(colorCyan, "API Server (Net):  "), colorize(colorGreen, lanAPI))
 	if strings.HasPrefix(lanIP, "172.") {
 		fmt.Printf(" %s \n\n", colorize(colorYellow, "WARN: Network IP 172.* (Docker bridge) will not open on other devices."))
 	}
@@ -319,5 +341,96 @@ func Stop() error {
 
 	printSuccess("All FluxStream containers gracefully stopped.")
 
+	return nil
+}
+
+// Update downloads and runs the installation script to update the CLI binary.
+func Update() error {
+	printHeader("UPDATING FLUXSTREAM")
+	printStep("Fetching latest version installation script...")
+
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" {
+		printInfo("Running PowerShell update command...")
+		cmd = exec.Command("powershell", "-Command", "irm https://raw.githubusercontent.com/scythe504/fluxstream/main/scripts/install.ps1 | iex")
+	} else {
+		printInfo("Running curl update command...")
+		cmd = exec.Command("sh", "-c", "curl -fsSL https://raw.githubusercontent.com/scythe504/fluxstream/main/scripts/install.sh | bash")
+	}
+
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+
+	if err := cmd.Run(); err != nil {
+		printError(fmt.Sprintf("Failed to update FluxStream: %v", err))
+		return err
+	}
+
+	printSuccess("FluxStream update completed successfully!")
+	return nil
+}
+
+// Uninstall stops and removes containers, deletes docker volumes, and removes configuration directories
+func Uninstall() error {
+	printHeader("UNINSTALLING FLUXSTREAM")
+
+	// 1. Stop and remove containers and volumes
+	if IsDockerInstalled() && DockerInfo() == nil {
+		printStep("Removing Docker containers and volumes...")
+		err := DockerCompose("down", "-v")
+		if err != nil {
+			printError(fmt.Sprintf("Failed to stop and remove Docker resources: %v", err))
+		} else {
+			printSuccess("Docker containers and volumes removed.")
+		}
+	}
+
+	// 2. Remove config directory
+	printStep("Removing configuration directory...")
+	baseConfigDir, err := os.UserConfigDir()
+	if err != nil {
+		printError(fmt.Sprintf("Failed to locate config directory: %v", err))
+	} else {
+		configDir := filepath.Join(baseConfigDir, "fluxstream")
+		if _, err := os.Stat(configDir); err == nil {
+			if err := os.RemoveAll(configDir); err != nil {
+				printError(fmt.Sprintf("Failed to remove config directory %s: %v", configDir, err))
+			} else {
+				printSuccess(fmt.Sprintf("Configuration directory removed: %s", configDir))
+			}
+		} else {
+			printInfo("Configuration directory not found, skipping.")
+		}
+	}
+
+	// 3. Remove user application data (downloads)
+	printStep("Removing user application data (downloads)...")
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		printError(fmt.Sprintf("Failed to locate home directory: %v", err))
+	} else {
+		var appDataDir string
+		switch runtime.GOOS {
+		case "windows":
+			appDataDir = filepath.Join(homeDir, "AppData", "Roaming", "Fluxstream")
+		case "darwin":
+			appDataDir = filepath.Join(homeDir, "Library", "Application Support", "Fluxstream")
+		default:
+			appDataDir = filepath.Join(homeDir, ".local", "share", "fluxstream")
+		}
+
+		if _, err := os.Stat(appDataDir); err == nil {
+			if err := os.RemoveAll(appDataDir); err != nil {
+				printError(fmt.Sprintf("Failed to remove application data directory %s: %v", appDataDir, err))
+			} else {
+				printSuccess(fmt.Sprintf("Application data directory removed: %s", appDataDir))
+			}
+		} else {
+			printInfo("Application data directory not found, skipping.")
+		}
+	}
+
+	printSuccess("FluxStream has been successfully uninstalled from your system.")
 	return nil
 }

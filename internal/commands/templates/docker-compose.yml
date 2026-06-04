@@ -20,13 +20,13 @@ services:
       - PORT=8080
       - APP_ENV=local
       - PUBLIC_URL=http://localhost:8080
-      - DB_URL=/app/data/fluxstream.db
+      - DB_URL=/app/fluxstream.db
       - FRONTEND_URL=http://localhost:3000
     ports:
       - "8080:8080"
     volumes:
       - "{{DOWNLOAD_PATH}}:/app/fluxstream/download"
-      - "./data:/app/data"
+      - "./fluxstream.db:/app/fluxstream.db"
     networks:
       - fluxstream
     restart: unless-stopped

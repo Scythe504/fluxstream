@@ -8,7 +8,7 @@ import (
 )
 
 var (
-	version = "0.2.0"
+	version = "0.2.1"
 )
 
 var rootCmd = &cobra.Command{
@@ -61,12 +61,30 @@ var stopCmd = &cobra.Command{
 	},
 }
 
+var updateCmd = &cobra.Command{
+	Use:   "update",
+	Short: "Updates the Fluxstream CLI binary to the latest version",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return commands.Update()
+	},
+}
+
+var uninstallCmd = &cobra.Command{
+	Use:   "uninstall",
+	Short: "Uninstalls Fluxstream containers, volumes, and configuration directories",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return commands.Uninstall()
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(startCmd)
 	rootCmd.AddCommand(setupCmd)
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(whereCmd)
 	rootCmd.AddCommand(stopCmd)
+	rootCmd.AddCommand(updateCmd)
+	rootCmd.AddCommand(uninstallCmd)
 
 	rootCmd.SetHelpTemplate(commands.GetLogoString() + "\n" + rootCmd.HelpTemplate())
 }
