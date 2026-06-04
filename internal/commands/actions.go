@@ -103,6 +103,12 @@ func Setup() error {
 		return fmt.Errorf("failed to create config directory: %v", err)
 	}
 
+	// Create database directory under configDir
+	dbDataDir := filepath.Join(configDir, "data")
+	if err := os.MkdirAll(dbDataDir, 0o755); err != nil {
+		return fmt.Errorf("failed to create database directory: %v", err)
+	}
+
 	// Determine app data directory
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
