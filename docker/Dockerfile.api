@@ -16,7 +16,7 @@ RUN go install github.com/pressly/goose/v3/cmd/goose@latest
 
 # --- Stage 2: API Runtime ---
 FROM alpine:latest AS api
-RUN apk add --no-cache ca-certificates tzdata
+RUN apk add --no-cache ca-certificates tzdata ffmpeg
 WORKDIR /app
 COPY --from=builder /out/api /app/api
 EXPOSE 8080
