@@ -22,6 +22,7 @@ services:
       - PUBLIC_URL=http://localhost:8080
       - DB_URL=/app/fluxstream.db
       - FRONTEND_URL=http://localhost:3000
+      - PROVIDERS_SERVICE_URL=https://providers.fluxstream.app
     ports:
       - "8080:8080"
     volumes:
