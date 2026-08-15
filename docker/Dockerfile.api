@@ -14,15 +14,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o /out/api ./cmd/api
 # Install goose (for migrations)
 RUN go install github.com/pressly/goose/v3/cmd/goose@latest
 
-# --- Stage 2: API Runtime ---
-FROM alpine:latest AS api
-RUN apk add --no-cache ca-certificates tzdata ffmpeg
-WORKDIR /app
-COPY --from=builder /out/api /app/api
-EXPOSE 8080
-CMD ["/app/api"]
-
-# --- Stage 3: Migration Runtime ---
+# --- Stage 2: Migration Runtime ---
 FROM alpine:latest AS migrate
 WORKDIR /app/fluxstream
 
@@ -34,3 +26,11 @@ COPY ./internal/database/migrations ./migrations
 
 # Default command (can be overridden in docker-compose)
 CMD ["goose", "up"]
+
+# --- Stage 3: API Runtime ---
+FROM alpine:latest AS api
+RUN apk add --no-cache ca-certificates tzdata ffmpeg
+WORKDIR /app
+COPY --from=builder /out/api /app/api
+EXPOSE 8080
+CMD ["/app/api"]

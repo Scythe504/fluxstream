@@ -1,0 +1,12 @@
+.git
+.env
+dist
+download
+data
+tmp
+main
+fluxstream
+*.db
+*.db-shm
+*.db-wal
+.DS_Store
