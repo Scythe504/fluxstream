@@ -41,7 +41,7 @@ func TestListVerifiedProviders(t *testing.T) {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		
+
 		// Return two providers: one verified and one pending
 		providers := []ProviderResponse{
 			{

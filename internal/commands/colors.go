@@ -7,14 +7,14 @@ import (
 
 const (
 	colorReset  = "\033[0m"
-	colorRed    = "\033[38;2;244;63;94m"     // Rose-500
-	colorGreen  = "\033[38;2;16;185;129m"    // Emerald-500
-	colorYellow = "\033[38;2;245;158;11m"    // Amber-500
-	colorBlue   = "\033[38;2;99;102;241m"    // Indigo-500
-	colorCyan   = "\033[38;2;6;182;212m"     // Cyan-500
-	colorPink   = "\033[38;2;244;114;182m"   // Pink-400
-	colorPurple = "\033[38;2;192;132;252m"   // Purple-400
-	colorGray   = "\033[38;2;115;115;115m"   // Gray-500
+	colorRed    = "\033[38;2;244;63;94m"   // Rose-500
+	colorGreen  = "\033[38;2;16;185;129m"  // Emerald-500
+	colorYellow = "\033[38;2;245;158;11m"  // Amber-500
+	colorBlue   = "\033[38;2;99;102;241m"  // Indigo-500
+	colorCyan   = "\033[38;2;6;182;212m"   // Cyan-500
+	colorPink   = "\033[38;2;244;114;182m" // Pink-400
+	colorPurple = "\033[38;2;192;132;252m" // Purple-400
+	colorGray   = "\033[38;2;115;115;115m" // Gray-500
 )
 
 func colorize(color, text string) string {

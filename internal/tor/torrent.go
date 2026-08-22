@@ -17,6 +17,7 @@ type TorrentManager struct {
 	cl       *torrent.Client
 	torrents map[string]*torrent.Torrent
 	mu       sync.RWMutex
+	dataDir  string
 }
 
 type FileMetadata struct {
@@ -41,18 +42,9 @@ func New(port int) TorrentManager {
 	// Performance tuning
 	cfg.MinDialTimeout = 10 * time.Second
 
-	// Try environment override first (for flexibility)
-	dataDir := os.Getenv("DOWNLOAD_PATH")
-	if dataDir == "" {
-		// Default to Docker path if not specified
-		dataDir = "/app/fluxstream/download"
-
-		// Fallback for local dev environments
-		if _, err := os.Stat(dataDir); os.IsNotExist(err) {
-			if home, err := os.UserHomeDir(); err == nil {
-				dataDir = filepath.Join(home, ".local", "share", "fluxstream", "downloads")
-			}
-		}
+	dataDir := utils.GetDownloadDir()
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		log.Printf("Warning: failed to create download directory %s: %v", dataDir, err)
 	}
 
 	cfg.DataDir = dataDir
@@ -66,7 +58,12 @@ func New(port int) TorrentManager {
 		cl:       client,
 		torrents: make(map[string]*torrent.Torrent),
 		mu:       sync.RWMutex{},
+		dataDir:  dataDir,
 	}
+}
+
+func (tr *TorrentManager) GetDataDir() string {
+	return tr.dataDir
 }
 
 func (tr *TorrentManager) AddMagnet(magnetLink string) (string, error) {

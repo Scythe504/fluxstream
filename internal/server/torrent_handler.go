@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -79,13 +80,22 @@ func (s *Server) deleteTorrent(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if err := os.Remove(video.FilePath); err != nil && !os.IsNotExist(err) {
-			utils.LogHandlerError(r, "deleteTorrent", err, map[string]any{"videoId": videoId, "filePath": video.FilePath})
-		}
-
-		partPath := video.FilePath + ".part"
-		if err := os.Remove(partPath); err != nil && !os.IsNotExist(err) {
-			utils.LogHandlerError(r, "deleteTorrent", err, map[string]any{"videoId": videoId, "partPath": partPath})
+		if actualPath, err := s.resolveVideoFilePath(videoId, video); err == nil {
+			cleanPath := strings.TrimSuffix(actualPath, ".part")
+			if err := os.Remove(cleanPath); err != nil && !os.IsNotExist(err) {
+				utils.LogHandlerError(r, "deleteTorrent", err, map[string]any{"videoId": videoId, "filePath": cleanPath})
+			}
+			if err := os.Remove(cleanPath + ".part"); err != nil && !os.IsNotExist(err) {
+				utils.LogHandlerError(r, "deleteTorrent", err, map[string]any{"videoId": videoId, "partPath": cleanPath + ".part"})
+			}
+		} else if video.FilePath != "" {
+			if err := os.Remove(video.FilePath); err != nil && !os.IsNotExist(err) {
+				utils.LogHandlerError(r, "deleteTorrent", err, map[string]any{"videoId": videoId, "filePath": video.FilePath})
+			}
+			partPath := video.FilePath + ".part"
+			if err := os.Remove(partPath); err != nil && !os.IsNotExist(err) {
+				utils.LogHandlerError(r, "deleteTorrent", err, map[string]any{"videoId": videoId, "partPath": partPath})
+			}
 		}
 	}
 

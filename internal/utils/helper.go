@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
@@ -32,9 +33,9 @@ func RandomId() string {
 }
 
 func GenerateSecureToken() string {
-    b := make([]byte, 32)
-    rand.Read(b)
-    return base64.URLEncoding.EncodeToString(b)
+	b := make([]byte, 32)
+	rand.Read(b)
+	return base64.URLEncoding.EncodeToString(b)
 }
 
 var videoExtensions = map[string]bool{
@@ -64,6 +65,37 @@ func GetFileMetadata(path string) (os.FileInfo, error) {
 		return nil, fmt.Errorf("failed to stat %s: %w", path, err)
 	}
 	return info, nil
+}
+
+// GetDownloadDir returns the resolved directory for storing downloaded files.
+// Priority:
+// 1. DOWNLOAD_PATH environment variable (if set and non-empty)
+// 2. /app/fluxstream/download (Docker default if it exists)
+// 3. User data directory based on OS
+func GetDownloadDir() string {
+	if dataDir := os.Getenv("DOWNLOAD_PATH"); dataDir != "" {
+		return dataDir
+	}
+
+	// Default to Docker path if not specified
+	dockerPath := "/app/fluxstream/download"
+	if _, err := os.Stat(dockerPath); err == nil {
+		return dockerPath
+	}
+
+	// Fallback for local dev environments
+	if home, err := os.UserHomeDir(); err == nil {
+		switch runtime.GOOS {
+		case "windows":
+			return filepath.Join(home, "AppData", "Roaming", "Fluxstream", "downloads")
+		case "darwin":
+			return filepath.Join(home, "Library", "Application Support", "Fluxstream", "downloads")
+		default:
+			return filepath.Join(home, ".local", "share", "fluxstream", "downloads")
+		}
+	}
+
+	return dockerPath
 }
 
 // GetLocalIP finds the primary outbound IP address.

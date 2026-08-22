@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/anacrolix/torrent"
@@ -79,7 +80,7 @@ func (s *Server) createVideo(w http.ResponseWriter, r *http.Request) {
 	video := database.Video{
 		Id:         infoHash,
 		MagnetLink: link.MagnetLink,
-		FilePath:   filepath.Join(os.Getenv("DOWNLOAD_PATH"), filePath.Name),
+		FilePath:   filepath.Join(s.t.GetDataDir(), filePath.Path),
 		CreatedAt:  time.Now().UnixMilli(),
 	}
 	if err = s.db.CreateVideo(video); err != nil {
@@ -89,6 +90,80 @@ func (s *Server) createVideo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	utils.WriteJSON(w, http.StatusOK, map[string]string{"video_id": infoHash})
+}
+
+func (s *Server) getDownloadDir() string {
+	if s.t.GetDataDir() != "" {
+		return s.t.GetDataDir()
+	}
+	return utils.GetDownloadDir()
+}
+
+func (s *Server) resolveVideoFilePath(videoId string, video database.Video) (string, error) {
+	dataDir := s.getDownloadDir()
+
+	// 1. Check if active torrent metadata gives the accurate path
+	if meta, err := s.t.GetMetadata(videoId); err == nil && meta != nil && meta.Path != "" {
+		expectedPath := filepath.Join(dataDir, meta.Path)
+		if utils.FileExists(expectedPath) {
+			return expectedPath, nil
+		}
+		if utils.FileExists(expectedPath + ".part") {
+			return expectedPath + ".part", nil
+		}
+	}
+
+	// 2. Check if video.FilePath exists directly or with .part
+	if video.FilePath != "" {
+		if utils.FileExists(video.FilePath) {
+			return video.FilePath, nil
+		}
+		if utils.FileExists(video.FilePath + ".part") {
+			return video.FilePath + ".part", nil
+		}
+
+		// Check relative to current data directory
+		relPath := filepath.Join(dataDir, video.FilePath)
+		if utils.FileExists(relPath) {
+			return relPath, nil
+		}
+		if utils.FileExists(relPath + ".part") {
+			return relPath, nil
+		}
+
+		// Check basename in current data directory
+		baseName := filepath.Base(video.FilePath)
+		basePath := filepath.Join(dataDir, baseName)
+		if utils.FileExists(basePath) {
+			return basePath, nil
+		}
+		if utils.FileExists(basePath + ".part") {
+			return basePath + ".part", nil
+		}
+
+		// Search subdirectories within dataDir
+		var foundPath string
+		targetBase := baseName
+		targetPart := baseName + ".part"
+
+		_ = filepath.WalkDir(dataDir, func(path string, d os.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return nil
+			}
+			name := d.Name()
+			if name == targetBase || name == targetPart {
+				foundPath = path
+				return filepath.SkipAll
+			}
+			return nil
+		})
+
+		if foundPath != "" {
+			return foundPath, nil
+		}
+	}
+
+	return "", fmt.Errorf("video file not found on disk: %s", video.FilePath)
 }
 
 // Resolve returns a video reader + metadata by checking torrent, cache, and disk.
@@ -161,26 +236,27 @@ func (s *Server) getVideoMetadata(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if video.FilePath == "" || !utils.FileExists(video.FilePath) {
-		err := fmt.Errorf("video file does not exist on disk: %s", video.FilePath)
-		utils.LogHandlerError(r, "getVideoMetadata", err, map[string]any{"videoId": videoId})
+	actualPath, err := s.resolveVideoFilePath(videoId, video)
+	if err != nil {
+		utils.LogHandlerError(r, "getVideoMetadata", err, map[string]any{"videoId": videoId, "filePath": video.FilePath})
 		utils.WriteError(w, http.StatusNotFound, "metadata unavailable")
 		return
 	}
 
-	info, err := os.Stat(video.FilePath)
+	info, err := os.Stat(actualPath)
 	if err != nil {
-		utils.LogHandlerError(r, "getVideoMetadata", err, map[string]any{"videoId": videoId, "filePath": video.FilePath})
+		utils.LogHandlerError(r, "getVideoMetadata", err, map[string]any{"videoId": videoId, "filePath": actualPath})
 		utils.WriteError(w, http.StatusInternalServerError, "failed to read file metadata")
 		return
 	}
 
+	cleanPath := strings.TrimSuffix(actualPath, ".part")
 	meta = &tor.FileMetadata{
-		Name:      filepath.Base(video.FilePath),
-		Path:      video.FilePath,
+		Name:      filepath.Base(cleanPath),
+		Path:      cleanPath,
 		Length:    info.Size(),
-		Extension: filepath.Ext(video.FilePath),
-		IsVideo:   utils.IsVideoFile(filepath.Ext(video.FilePath)),
+		Extension: filepath.Ext(cleanPath),
+		IsVideo:   utils.IsVideoFile(filepath.Ext(cleanPath)),
 	}
 
 	utils.WriteJSON(w, http.StatusOK, meta)
@@ -230,14 +306,9 @@ func (s *Server) serveSubtitles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	inputPath := video.FilePath
-	if utils.FileExists(video.FilePath + ".part") {
-		inputPath = video.FilePath + ".part"
-	}
-
-	if !utils.FileExists(inputPath) {
-		err := fmt.Errorf("video file not found on disk: %s", inputPath)
-		utils.LogHandlerError(r, "serveSubtitles", err, map[string]any{"videoId": videoId, "inputPath": inputPath})
+	inputPath, err := s.resolveVideoFilePath(videoId, video)
+	if err != nil {
+		utils.LogHandlerError(r, "serveSubtitles", err, map[string]any{"videoId": videoId, "filePath": video.FilePath})
 		utils.WriteError(w, http.StatusNotFound, "video file not found on disk")
 		return
 	}
